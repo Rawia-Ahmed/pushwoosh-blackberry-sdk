@@ -259,9 +259,9 @@ var pushwoosh = {
 				
 				var pushObject = JSON.parse(text);
 				pushwooshUtils.sendPushStat(pushObject.p, function(successMessage){
-					utils.log("Send push stat success: " + JSON.stringify(successMessage))
+					utils.log("Send push stat success: " + pushObject.p + ", " + JSON.stringify(successMessage))
 				}, function(jqXHR, errorMessage){
-					utils.log("Send push stat failed: " + JSON.stringify(errorMessage))
+					utils.log("Send push stat failed: " + pushObject.p + ", " + JSON.stringify(errorMessage))
 				})
 				
 				pushwoosh.pushwooshMessageCallback(pushObject);
@@ -334,6 +334,8 @@ var pushwoosh = {
 	
 	openPushFromDb: function (seqnum) {
 		pushwoosh.db.readTransaction(function(tx) {
+			utils.log('Opening push from DB: ' + seqnum);
+
 			tx.executeSql("SELECT type, extension, content, unread FROM push WHERE seqnum = ?;",
 				[ seqnum ], 
 				function(tx, results) {
@@ -552,6 +554,8 @@ var pushHandler = {
 	 */
 	handle: function(pushPayload) {
 		var contentType = pushPayload.headers["Content-Type"];
+
+		utils.log("Handling push: " + pushPayload.id);
 		
 		pushHandler.checkForDuplicateMessage(pushPayload.id, pushPayload.data, contentType);
 
@@ -563,6 +567,7 @@ var pushHandler = {
 			// might want to reject the push (for example, after looking at the headers that came with the push
 			// or the data of the push, we might decide that the push received did not match what we expected
 			// and so we might want to reject it)
+			utils.log("acknowledge");
 			pushPayload.acknowledge(true);
 		}
 	},
@@ -580,8 +585,10 @@ var pushHandler = {
 	checkForDuplicateMessage: function(messageId, content, contentType) {
 		// If there was no value for the header, then skip this check
 		if (messageId == null) {
+			utils.log("no message id, processing push");
 			pushHandler.processPush(content, contentType);
 		} else {
+			utils.log("adding push to database: " + messageId);
 			pushwoosh.db.transaction(function(tx) {
 				tx.executeSql("CREATE TABLE IF NOT EXISTS messageidhistory"
 						+ "(rownum INTEGER PRIMARY KEY AUTOINCREMENT, messageid TEXT);", [], function(tx, results) {
@@ -606,9 +613,11 @@ var pushHandler = {
 			tx.executeSql("SELECT messageid FROM messageidhistory WHERE messageid = ?;", [ messageId ], function(tx, results) {
 				if (results.rows.length != 0) {
 					// A duplicate was found
+					utils.log("duplicate push found");
 					pushHandler.duplicateFoundAction();
 				} else {
 					// No duplicate was found, insert a new entry into the history
+					utils.log("inserting push:" + messageId);
 					pushwoosh.db.transaction(function(tx) {
 						tx.executeSql("INSERT INTO messageidhistory (rownum, messageid) VALUES(?, ?);", [ null, messageId ],
 								function(tx, results) {
@@ -634,12 +643,15 @@ var pushHandler = {
 				if (results.rows.item(0).count > 10) {
 					pushwoosh.db.transaction(function(tx) {
 						// Remove the oldest message Id in the history
+						utils.log("Removing oldest push from history");
 						tx.executeSql("DELETE FROM messageidhistory WHERE rownum = (SELECT min(rownum) FROM messageidhistory);", [],
 								function(tx, results) {
+									utils.log("Now processing push");
 									pushHandler.processPush(content, contentType);
 								});
 					});
 				} else {
+					utils.log("History ok, processing push");
 					pushHandler.processPush(content, contentType);
 				}
 			});
@@ -945,6 +957,7 @@ var pushHandler = {
 	 *            pushtime the time of the push
 	 */
 	storePush: function(content, contentType, pushdate, pushtime) {
+		utils.log("Storing push");
 		pushwoosh.db.transaction(function(tx) {
 			tx.executeSql("CREATE TABLE IF NOT EXISTS push (seqnum INTEGER PRIMARY KEY AUTOINCREMENT, "
 					+ "pushdate TEXT, type TEXT, pushtime TEXT, extension TEXT, content TEXT, unread TEXT);", [], function(tx,
@@ -980,6 +993,8 @@ var pushHandler = {
 	 *            pushtime the time of the push
 	 */
 	insertPush: function(content, type, extension, pushdate, pushtime) {
+		utils.log("Inserting push");
+
 		pushwoosh.db.transaction(function(tx) {
 			tx.executeSql("INSERT INTO push (seqnum, pushdate, type, pushtime, extension, content, unread) "
 					+ "VALUES (?, ?, ?, ?, ?, ?, ?);", [ null, pushdate, type, pushtime, extension, content, "T" ], function(tx,
@@ -987,6 +1002,7 @@ var pushHandler = {
 				var seqnum = results.insertId;
 				
 				var pushContent = JSON.parse(pushHandler.b64_to_utf8(content));
+				utils.log("Insert push: " + pushHandler.b64_to_utf8(content));
 
 				//sending stats
 				pushwooshUtils.sendPushDelivery(pushContent.p, function(successMessage){
@@ -1009,6 +1025,7 @@ var pushHandler = {
 				})
 				
 				if (!pushwoosh.hasBeenInForeground) {
+					utils.log("Not in foreground");
 					// Add a notification to the BlackBerry Hub for this push
 					// if app does not in foreground
 					var title = blackberry.app.name;
@@ -1031,6 +1048,7 @@ var pushHandler = {
 					})
 
 					// Call message callback
+					utils.log("Calling callback");
 					pushwoosh.pushwooshMessageCallback(pushContent);
 				}
 			});
