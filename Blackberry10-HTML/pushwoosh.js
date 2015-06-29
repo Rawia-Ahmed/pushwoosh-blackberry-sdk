@@ -527,13 +527,19 @@ var pushwooshUtils = {
 				var status_code = msg['status_code'];
 
 				if(status_code == 200) {
-					lambda(msg);
+					if (typeof (lambda) === 'function') {
+						lambda(msg);
+					}
 				} else {
-					lambdaerror(msg);
+					if (typeof (lambdaerror) === 'function') {
+						lambdaerror(msg);
+					}
 				}
 			},
 			error: function (jqXHR, sts, err) {
-				lambdaerror(jqXHR, err);
+				if (typeof (lambdaerror) === 'function') {
+					lambdaerror(jqXHR, err);
+				}
 			}
 		});
 	}
